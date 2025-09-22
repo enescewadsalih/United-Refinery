@@ -1,1 +1,161 @@
-main
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>United Refinery — Operation</title>
+  <style>
+    /* Basic styling, same refinery theme as before */
+    :root{--bg-dark:#0f1720;--panel:#0b1220;--accent:#f6a623;--muted:#9aa6b2;--glass: rgba(255,255,255,0.03);}
+    html,body{margin:0;height:100%;background:#0f1720;color:#eaf3ff;font-family:Inter,sans-serif;}
+    header{padding:24px 36px;background:linear-gradient(90deg,#0b1220,#0f1720);display:flex;align-items:center;gap:16px;}
+    header h1{margin:0;color:var(--accent);}
+    main{padding:24px;display:grid;justify-content:center;}
+    .card{background:var(--panel);padding:24px;border-radius:12px;width:100%;max-width:600px;}
+    input,select{width:100%;padding:10px;border-radius:8px;margin-bottom:12px;border:none;background:var(--glass);color:#eaf3ff;}
+    input[readonly]{opacity:0.8;}
+    button{padding:10px 16px;border-radius:10px;background:var(--accent);color:#07212a;font-weight:700;border:none;cursor:pointer;}
+    #loginModal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:999;}
+  </style>
+</head>
+<body>
+<div id="loginModal">
+  <div class="card">
+    <h2>Login (Operation)</h2>
+    <form id="loginForm">
+      <input id="loginEmail" type="email" placeholder="Email" required />
+      <input id="loginPassword" type="password" placeholder="Password" required />
+      <button type="submit">Login</button>
+      <p id="loginError" style="color:red;font-size:12px;"></p>
+    </form>
+  </div>
+</div>
+
+<header>
+  <h1>United Refinery — Weighbridge Operation</h1>
+</header>
+
+<main>
+  <section class="card" id="operationFormSection" style="display:none;">
+    <h2>Weighbridge Entry</h2>
+    <form id="entryForm">
+      <input type="date" id="enterDate" required placeholder="Enter Date"/>
+      <input type="date" id="exitDate" placeholder="Exit Date"/>
+      <input type="time" id="enterTime" required placeholder="Enter Time"/>
+      <input type="time" id="exitTime" placeholder="Exit Time"/>
+      <input type="text" id="plate" placeholder="Plate Number" pattern="[A-Za-z0-9\- ]{1,20}" required/>
+      <input type="text" id="material" list="materialsList" placeholder="Material" required/>
+      <datalist id="materialsList"></datalist>
+      <select id="status" required>
+        <option value="">-- Status --</option>
+        <option value="Loading">Loading</option>
+        <option value="Unloading">Unloading</option>
+      </select>
+      <input type="text" id="from" list="fromList" placeholder="From" required/>
+      <datalist id="fromList"></datalist>
+      <input type="text" id="driver" list="driversList" placeholder="Driver"/>
+      <datalist id="driversList"></datalist>
+      <input type="number" id="fromNetValue" placeholder="From Net Value"/>
+      <input type="text" id="fromNetLabel" readonly placeholder="[From] Net"/>
+      <input type="number" id="urWeight1" placeholder="UR 1st Weight"/>
+      <input type="number" id="urWeight2" placeholder="UR 2nd Weight"/>
+      <input type="number" id="net" readonly placeholder="Net"/>
+      <input type="number" id="difference" readonly placeholder="Difference"/>
+      <button type="submit">Save Entry</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </form>
+  </section>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBdFxIDAkyNfBMcvY1n6sElcBSEYVEFvwQ",
+  authDomain: "united-refinery.firebaseapp.com",
+  projectId: "united-refinery",
+  storageBucket: "united-refinery.firebasestorage.app",
+  messagingSenderId: "863767630302",
+  appId: "1:863767630302:web:125eab938bc0a1dac50d4f"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth();
+
+const loginForm = document.getElementById('loginForm');
+const loginModal = document.getElementById('loginModal');
+const loginError = document.getElementById('loginError');
+const operationFormSection = document.getElementById('operationFormSection');
+
+const materialsList = document.getElementById('materialsList');
+const fromList = document.getElementById('fromList');
+const driversList = document.getElementById('driversList');
+
+const fromInput = document.getElementById('from');
+const fromNetLabel = document.getElementById('fromNetLabel');
+const fromNetValue = document.getElementById('fromNetValue');
+const urWeight1 = document.getElementById('urWeight1');
+const urWeight2 = document.getElementById('urWeight2');
+const netField = document.getElementById('net');
+const diffField = document.getElementById('difference');
+const clearBtn = document.getElementById('clearBtn');
+const entryForm = document.getElementById('entryForm');
+
+loginForm.addEventListener('submit', async e=>{
+  e.preventDefault();
+  try{
+    const userCredential = await signInWithEmailAndPassword(auth, loginForm.loginEmail.value, loginForm.loginPassword.value);
+    const uid = userCredential.user.uid;
+    const userDoc = await getDocs(collection(db,'users'));
+    const currentUser = userDoc.docs.find(d=>d.id===uid);
+    if(!currentUser || currentUser.data().role!=='operation') throw new Error('Not an operation user');
+    loginModal.style.display='none';
+    operationFormSection.style.display='block';
+    refreshSuggestions();
+  }catch(err){
+    loginError.textContent = err.message;
+  }
+});
+
+onAuthStateChanged(auth,user=>{
+  if(!user){ loginModal.style.display='flex'; operationFormSection.style.display='none'; }
+});
+
+fromInput.addEventListener('input',()=>{fromNetLabel.value=fromInput.value?fromInput.value+' net':'';});
+[urWeight1,urWeight2].forEach(el=>el.addEventListener('input',()=>{computeNet();computeDiff();}));
+fromNetValue.addEventListener('input',computeDiff);
+clearBtn.addEventListener('click',()=>{entryForm.reset();fromNetLabel.value='';netField.value='';diffField.value='';});
+
+function computeNet(){const a=parseFloat(urWeight1.value)||0;const b=parseFloat(urWeight2.value)||0;netField.value=Math.abs(a-b).toFixed(2);}
+function computeDiff(){const f=parseFloat(fromNetValue.value)||0;const n=parseFloat(netField.value)||0;diffField.value=(f-n).toFixed(2);}
+
+async function refreshSuggestions(){
+  const snap = await getDocs(collection(db,'weighbridge_entries'));
+  const materials = new Set(); const froms=new Set(); const drivers=new Set();
+  snap.forEach(d=>{const data=d.data(); if(data.material) materials.add(data.material); if(data.from) froms.add(data.from); if(data.driver) drivers.add(data.driver);});
+  materialsList.innerHTML=Array.from(materials).map(m=>`<option value="${m}">`).join('');
+  fromList.innerHTML=Array.from(froms).map(m=>`<option value="${m}">`).join('');
+  driversList.innerHTML=Array.from(drivers).map(m=>`<option value="${m}">`).join('');
+}
+
+entryForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const data={
+    enterDate:entryForm.enterDate.value, exitDate:entryForm.exitDate.value,
+    enterTime:entryForm.enterTime.value, exitTime:entryForm.exitTime.value,
+    plate:entryForm.plate.value, material:entryForm.material.value, status:entryForm.status.value,
+    from:entryForm.from.value, driver:entryForm.driver.value,
+    fromNetLabel:fromNetLabel.value, fromNetValue:parseFloat(fromNetValue.value)||0,
+    urWeight1:parseFloat(urWeight1.value)||0, urWeight2:parseFloat(urWeight2.value)||0,
+    net:parseFloat(netField.value)||0, difference:parseFloat(diffField.value)||0,
+    createdAt:new Date().toISOString()
+  };
+  try{await addDoc(collection(db,'weighbridge_entries'),data);alert('Saved!');entryForm.reset();fromNetLabel.value='';netField.value='';diffField.value='';refreshSuggestions();}
+  catch(err){alert('Save failed');console.error(err);}
+});
+</script>
+</body>
+</html>
